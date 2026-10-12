@@ -41,13 +41,16 @@ export function runAll(cfg, onProgress = () => {}) {
   const g = generateGraph(cfg);
   const avgW = g.totalWeight / g.edges.length;
   const out = [];
+  const done = (r) => { out.push(r); onProgress(r.id, 1, r.cut); };
   onProgress("exact", 0);
   const ex = exact(g);
-  if (ex) out.push({ id: "exact", ...ex });
+  if (ex) done({ id: "exact", ...ex });
   onProgress("local", 0);
-  out.push({ id: "local", ...localSearch(g, cfg.seed) });
-  out.push({ id: "sa", ...simulatedAnnealing(g, cfg.seed, { sweeps: cfg.saSweeps, tStart: cfg.tStart * avgW, tEnd: cfg.tEnd * avgW, onProgress: (p) => onProgress("sa", p) }) });
-  out.push({ id: "sqa", ...simulatedQuantumAnnealing(g, cfg.seed, { sweeps: cfg.sqaSweeps, slices: cfg.slices, temperature: cfg.temperature * avgW, gammaStart: cfg.gammaStart * avgW, gammaEnd: 0.01, onProgress: (p) => onProgress("sqa", p) }) });
+  done({ id: "local", ...localSearch(g, cfg.seed, 20, (p, best) => onProgress("local", p, best)) });
+  onProgress("sa", 0);
+  done({ id: "sa", ...simulatedAnnealing(g, cfg.seed, { sweeps: cfg.saSweeps, tStart: cfg.tStart * avgW, tEnd: cfg.tEnd * avgW, onProgress: (p, best) => onProgress("sa", p, best) }) });
+  onProgress("sqa", 0);
+  done({ id: "sqa", ...simulatedQuantumAnnealing(g, cfg.seed, { sweeps: cfg.sqaSweeps, slices: cfg.slices, temperature: cfg.temperature * avgW, gammaStart: cfg.gammaStart * avgW, gammaEnd: 0.01, onProgress: (p, best) => onProgress("sqa", p, best) }) });
   return out;
 }
 

@@ -69,7 +69,7 @@ export const exact = (g) =>
     return { spins, cut: best, evaluations: total };
   });
 
-export const localSearch = (g, seed, restarts = 20) =>
+export const localSearch = (g, seed, restarts = 20, onProgress) =>
   timed(() => {
     const rng = mulberry32(seed ^ 0x51ed);
     let best = { cut: -1, spins: [] };
@@ -89,6 +89,7 @@ export const localSearch = (g, seed, restarts = 20) =>
       }
       const c = cutValue(s, g.edges);
       if (c > best.cut) best = { cut: c, spins: s.slice() };
+      if (onProgress) onProgress((r + 1) / restarts, best.cut);
     }
     return { ...best, evaluations: evals };
   });
@@ -101,7 +102,7 @@ export const simulatedAnnealing = (g, seed, { sweeps, tStart, tEnd, onProgress }
     let best = { cut, spins: s.slice() };
     const step = progressStep(sweeps);
     for (let k = 0; k < sweeps; k++) {
-      if (onProgress && k % step === 0) onProgress(k / sweeps);
+      if (onProgress && k % step === 0) onProgress(k / sweeps, best.cut);
       const T = tStart * Math.pow(tEnd / tStart, k / Math.max(1, sweeps - 1));
       for (let i = 0; i < g.n; i++) {
         const gain = s[i] * field(g, s, i);
@@ -124,7 +125,7 @@ export const simulatedQuantumAnnealing = (g, seed, { sweeps, slices: P, temperat
     let best = { cut: -1, spins: [] };
     const step = progressStep(sweeps);
     for (let k = 0; k < sweeps; k++) {
-      if (onProgress && k % step === 0) onProgress(k / sweeps);
+      if (onProgress && k % step === 0) onProgress(k / sweeps, best.cut);
       const gamma = gammaStart + (gammaEnd - gammaStart) * (k / Math.max(1, sweeps - 1));
       const jPerp = -(PT / 2) * Math.log(Math.tanh(gamma / PT));
       for (let p = 0; p < P; p++) {

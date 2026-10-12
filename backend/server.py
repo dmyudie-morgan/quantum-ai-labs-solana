@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import asyncio
@@ -23,6 +24,7 @@ from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
 import ai_service  # noqa: E402
 import market_service  # noqa: E402
+import registry_service  # noqa: E402
 import web3_service  # noqa: E402
 from web3_service import UpstreamError  # noqa: E402
 
@@ -34,6 +36,9 @@ db = client[os.environ["DB_NAME"]]
 
 @asynccontextmanager
 async def lifespan(_app):
+    await db.run_records.create_index("fingerprint", unique=True)
+    await db.run_records.create_index([("created_at", -1)])
+    await db.run_records.create_index([("tool", 1), ("problem_id", 1)])
     yield
     client.close()
 
@@ -88,6 +93,26 @@ class TxIn(NetworkIn):
 class TokenIn(NetworkIn):
     contract: str = Field(max_length=64)
     holder: Optional[str] = Field(default=None, max_length=64)
+
+
+class RegistryEntry(BaseDocument):
+    tool: str
+    fingerprint: str
+    label: Optional[str] = None
+    problem_id: Optional[str] = None
+    cut_verified: bool = False
+    summary: dict
+    record: dict
+    created_at: str
+
+    def public(self, full=False):
+        return self.model_dump(exclude={"id"} | (set() if full else {"record"}))
+
+
+class PublishIn(BaseModel):
+    canonical: str = Field(min_length=2, max_length=registry_service.MAX_CANONICAL)
+    fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    label: Optional[str] = Field(default=None, max_length=80)
 
 
 _hits = defaultdict(deque)
@@ -264,6 +289,72 @@ async def market_token(request: Request, chain: str = Query(max_length=32), addr
 async def market_search(request: Request, q: str = Query(max_length=64)):
     rate_limit(request, "market", 60)
     return await market_service.search(q)
+
+
+# ---------- Public run registry ----------
+@api.post("/registry/publish")
+async def registry_publish(body: PublishIn, request: Request):
+    rate_limit(request, "registry-publish", 10)
+    existing = await db.run_records.find_one({"fingerprint": body.fingerprint})
+    if existing:
+        return {"entry": RegistryEntry.from_mongo(existing).public(), "already_published": True}
+    v = registry_service.verify(body.canonical, body.fingerprint)
+    entry = RegistryEntry(tool=v["tool"], fingerprint=body.fingerprint, label=registry_service.clean_label(body.label),
+                          problem_id=v["problem_id"], cut_verified=v["cut_verified"], summary=v["summary"], record=v["record"],
+                          created_at=datetime.now(timezone.utc).isoformat())
+    await db.run_records.insert_one(entry.to_mongo())
+    return {"entry": entry.public(), "already_published": False}
+
+
+def _registry_filter(tool, problem, q):
+    f = {}
+    if tool in ("quantum-field", "benchmark"):
+        f["tool"] = tool
+    if problem == "custom":
+        f["problem_id"] = None
+        f["tool"] = "quantum-field"
+    elif problem:
+        f["problem_id"] = problem
+    q = (q or "").strip()
+    if q:
+        if re.fullmatch(r"[0-9a-fA-F]{6,64}", q):
+            f["fingerprint"] = {"$regex": f"^{q.lower()}"}
+        else:
+            f["label"] = {"$regex": re.escape(q), "$options": "i"}
+    return f
+
+
+@api.get("/registry")
+async def registry_list(request: Request, tool: Optional[str] = Query(default=None, max_length=32),
+                        problem: Optional[str] = Query(default=None, max_length=32), q: Optional[str] = Query(default=None, max_length=80),
+                        limit: int = Query(default=50, ge=1, le=100)):
+    rate_limit(request, "registry", 120)
+    f = _registry_filter(tool, problem, q)
+    docs = await db.run_records.find(f).sort("created_at", -1).limit(limit).to_list(limit)
+    total = await db.run_records.count_documents(f)
+    return {"entries": [RegistryEntry.from_mongo(d).public() for d in docs], "total": total}
+
+
+@api.get("/registry/leaderboard")
+async def registry_leaderboard(request: Request, problem: str = Query(max_length=32)):
+    rate_limit(request, "registry", 120)
+    if problem not in {p["id"] for p in registry_service.LIBRARY}:
+        raise HTTPException(404, "Unknown library instance.")
+    docs = await db.run_records.find({"problem_id": problem}).sort("created_at", 1).limit(1000).to_list(1000)
+    best = {}
+    for d in docs:
+        e = RegistryEntry.from_mongo(d)
+        for algo, cut in e.summary.get("cuts", {}).items():
+            if algo not in best or cut > best[algo]["cut"]:
+                best[algo] = {"cut": cut, "fingerprint": e.fingerprint, "label": e.label, "created_at": e.created_at}
+    return {"problem": problem, "runs": len(docs), "best": best}
+
+
+@api.get("/registry/{fingerprint}")
+async def registry_get(request: Request, fingerprint: str = PathParam(pattern=r"^[0-9a-f]{64}$")):
+    rate_limit(request, "registry", 120)
+    doc = await db.run_records.find_one({"fingerprint": fingerprint})
+    return {"entry": RegistryEntry.from_mongo(doc).public(full=True) if doc else None}
 
 
 app.include_router(api)
