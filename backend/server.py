@@ -3,6 +3,7 @@ import json
 import time
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from collections import defaultdict, deque
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -31,7 +32,13 @@ logger = logging.getLogger("qal")
 client = AsyncIOMotorClient(os.environ["MONGO_URL"])
 db = client[os.environ["DB_NAME"]]
 
-app = FastAPI(title="Quantum AI Labs API")
+@asynccontextmanager
+async def lifespan(_app):
+    yield
+    client.close()
+
+
+app = FastAPI(title="Quantum AI Labs API", lifespan=lifespan)
 api = APIRouter(prefix="/api")
 
 SESSION_RE = r"^[A-Za-z0-9_-]{8,64}$"
@@ -268,7 +275,3 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()

@@ -1,0 +1,32 @@
+{
+  "summary": "Full backend + frontend testing of Quantum AI Labs. 22/22 pytest cases passing including AI SSE chat with Mongo persistence, Web3 (ethereum chain status, address balance, tx not-found, USDC token metadata), Market (Dexscreener token/search), validation errors (400/422) and API-key leak scan. Frontend verified: homepage hero video + 6 module cards + CTA (follow link to x.com, _blank), hero navigation to /vision and /research, mobile nav toggle + no horizontal overflow (390px); Quantum Field: run produces 4 result rows, nodes 50 clamps to 18, reset restores defaults, cut values deterministic (247 across runs); Benchmark run + stats + history + reset; Web3 page shows chain ID verified, block, gas, RPC host and source line, gas alert banner appears at threshold 0 and hides at 100000; Research search filters, categories, research-empty state and article page work, unknown slug shows 404; Prompt Lab: template fills fields, output 801 chars, Plain/Markdown toggle, copy, score 100/100, save template works, tidy/clear present; Assistant page shows provider status 'Live model: Claude Sonnet 4.5', chat UI, suggestions, clear button. No console pageerrors on any route tested.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py uses deprecated @app.on_event('shutdown') – migrate to lifespan context manager (FastAPI 0.109+).",
+    "Rate-limit uses in-memory defaultdict/deque keyed by (bucket, ip); will not work across multiple backend replicas. Fine for current single-instance deployment but note for scaling.",
+    "AI chat endpoint inserts both user+assistant messages only after streaming completes; if user disconnects mid-stream, nothing is persisted (acceptable but may surprise users)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/__init__.py",
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "None (tests clean up their own chat history via DELETE /api/ai/history/{sid})",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend regression suite at /app/backend/tests/backend_test.py (22 tests, pytest-xdist). Uses REACT_APP_BACKEND_URL from frontend/.env fallback. External upstreams (public RPC + Dexscreener) are gracefully pytest.skip()'d on 429/502. Frontend testid coverage is excellent across all pages; use existing data-testid selectors verified in this iteration (hero-video, nav-cta-explore, hero-explore-vision-btn, hero-our-research-btn, module-card-*, cta-follow-btn, cta-explore-research-btn, nav-mobile-toggle, nav-mobile-menu, qlab-*, bench-*, web3-*, gas-alert-*, chat-*, prompt-*, research-empty)."
+}
