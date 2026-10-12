@@ -25,7 +25,13 @@ Enhance the existing Quantum AI Labs project into a premium AI × Quantum-Inspir
 - Knowledge Hub: 6 sourced articles with fact/hypothesis labels, search, categories
 - Testing: iteration_1 — backend 22/22, frontend 100%
 
+## Iteration 2 (2026-10-12)
+- Verifiable run records: SHA-256 of canonical JSON (config + deterministic outputs, timings excluded) for Quantum Field & Benchmark; share links auto-rerun and show Verified/Mismatch; JSON download
+- Quantum Field runs in a Web Worker: up to 200 nodes, presets, progress, cancel, 600M-op work cap; exact search only for n<=20 (else "vs best found"); CSR graph for speed
+- Gas alert browser notifications (Notification API) on inactive->active transition while tab hidden; background refresh continues when enabled; test notification button
+- X icon link in nav (desktop + mobile); removed unused poster preload
+- Testing: iteration_2 frontend 100%
+
 ## Backlog
-- P1: Verifiable experiment records (hash commitments of benchmark/lab runs)
-- P1: Web Worker for larger Quantum Field instances
+- P1: Optional public registry (e.g. on-chain or signed log) for run fingerprints
 - P2: More community channels once URLs provided; browser Notification API for gas alert while tab open

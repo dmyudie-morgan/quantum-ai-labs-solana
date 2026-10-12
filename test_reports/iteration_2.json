@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend-only regression + new-feature test for Quantum AI Labs (iteration 2). All 4 feature groups PASS: (1) Verifiable run records on Quantum Field and Benchmark produce sha256:<64hex> fingerprints; same cfg = same fingerprint, changing seed changes it; copy-share-link copies URL /quantum-field?cfg=...&fp=... (and /benchmark?algo=&size=&seed=&repeats=&fp=); opening share URL auto-runs and shows run-record-verified; tampering fp shows run-record-mismatch; changing a parameter after loading shared link clears verification. Downloaded JSON contains sha256, share_url and not_fingerprinted.timings_ms. (2) Quantum Field Web Worker: presets small/medium/large set 12/40/120; nodes field clamps to 4..200 (500->200, 3->4) on blur/Enter; qlab-progress + stage shown during run; qlab-cancel-btn cancels and restores run button; n=25 shows qlab-result-exact-skipped and header 'vs best found'; n=10 shows exact row and header 'vs optimum'. Note: config (n=200 d=0.3 sw=2000 sl=12) estimated 500.2M ops, below MAX_WORK=600M, so run was NOT disabled (expected per code, not a bug). (3) Gas notifications on /web3: when Notification is denied, toggle is disabled with explanatory text ('Notifications are blocked'); when permission granted (simulated via init script override), toggle enables, test btn appears, clicking fires notification + 'Test notification sent' toast; qal-gas-alert localStorage persists notify:true. Existing gas-alert-banner still visible at threshold 0 and hidden at 100000. (4) Nav: nav-x-link href=https://x.com/QntmAiLabs target=_blank; mobile menu shows mobile-x-link with @QntmAiLabs. Regression: /, /assistant, /prompt-lab, /research load with no console errors; no horizontal overflow at 390px on /quantum-field, /benchmark, /web3 (scrollWidth==clientWidth==390).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_2.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "useGasNotifications.js uses document.hidden gate inside effect — correct, but reliance on react ref 'prev' resets to current active value on every render after mount which is fine; however the dependency array omits 'perm' changes won't retrigger — minor, acceptable.",
+    "QuantumLab.jsx auto-run via useEffect with empty deps uses stale 'cfg' from initial render, which is desired for shared-link verification; comment is clear.",
+    "fingerprint.js canonical() correctly sorts keys and handles typed arrays; sha256Hex falls back to null on non-secure contexts — RunRecord shows 'SHA-256 unavailable' message appropriately."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (not retested)", "frontend": "100%"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All iteration-2 features verified via Playwright on the public preview URL. Clipboard-based share-link flow requires grant_permissions(['clipboard-read','clipboard-write']). Notification flow requires overriding window.Notification via context.add_init_script because Playwright Chromium does not auto-grant Notifications on arbitrary origins (grant_permissions(['notifications']) was insufficient — perm still reported 'denied'). To test share-links in a new page use wait_until='domcontentloaded' not 'networkidle' because the auto-run keeps network busy.",
+  "rca of the issue": "N/A — no issues found"
+}
