@@ -13,6 +13,8 @@ export const ChainMonitor = ({ network, setNetwork, networks }) => {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [auto, setAuto] = useLocalStorage("qal-auto-refresh", true);
+  const [alertCfg, setAlertCfg] = useLocalStorage("qal-gas-alert", { enabled: true, threshold: 20, direction: "above", notify: false });
+  const watch = alertCfg.enabled && alertCfg.notify;
   const [, tick] = useState(0);
 
   const load = useCallback(async () => {
@@ -29,10 +31,10 @@ export const ChainMonitor = ({ network, setNetwork, networks }) => {
 
   useEffect(() => { setData(null); setError(null); load(); }, [load]);
   useEffect(() => {
-    if (!auto) return undefined;
-    const id = setInterval(() => { if (!document.hidden) load(); }, INTERVAL);
+    if (!auto && !watch) return undefined;
+    const id = setInterval(() => { if (!document.hidden || watch) load(); }, INTERVAL);
     return () => clearInterval(id);
-  }, [auto, load]);
+  }, [auto, watch, load]);
   useEffect(() => { const id = setInterval(() => tick((t) => t + 1), 5000); return () => clearInterval(id); }, []);
 
   const stale = Boolean(error && data);
@@ -73,7 +75,7 @@ export const ChainMonitor = ({ network, setNetwork, networks }) => {
           Source: {data.source} via {data.rpc} · last successful update {fmtTime(data.fetched_at)}{data.cached ? " (served from 10 s cache)" : ""}
         </p>
       )}
-      <GasAlert gas={stale ? null : data?.gas_price_gwei} network={data?.label} />
+      <GasAlert gas={stale ? null : data?.gas_price_gwei} network={data?.label} cfg={alertCfg} setCfg={setAlertCfg} />
     </div>
   );
 };

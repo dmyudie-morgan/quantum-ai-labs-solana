@@ -2,7 +2,16 @@ import { useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { ArrowRight, Menu, X } from "lucide-react";
 import { Logo } from "./Logo";
-import { NAV_LINKS, UTILITIES } from "@/lib/site";
+import { COMMUNITY, NAV_LINKS, UTILITIES } from "@/lib/site";
+
+const X_URL = COMMUNITY.find((c) => c.id === "x")?.url;
+
+const XLink = ({ testId, className = "" }) =>
+  X_URL ? (
+    <a href={X_URL} target="_blank" rel="noopener noreferrer" aria-label="Follow Quantum AI Labs on X" className={`inline-flex items-center gap-2 text-white/65 transition-colors hover:text-white ${className}`} data-testid={testId}>
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" /></svg>
+    </a>
+  ) : null;
 
 const linkCls = ({ isActive }) =>
   `text-[13px] transition-colors duration-200 ${isActive ? "text-white" : "text-white/65 hover:text-white"}`;
@@ -38,7 +47,8 @@ export const SiteNav = () => {
             </NavLink>
           ))}
         </nav>
-        <Link to={{ pathname: "/", hash: "#modules" }} className="link-arrow ml-auto hidden md:inline-flex" data-testid="nav-cta-explore">
+        <XLink testId="nav-x-link" className="ml-auto mr-6 hidden md:inline-flex" />
+        <Link to={{ pathname: "/", hash: "#modules" }} className={`link-arrow hidden md:inline-flex ${X_URL ? "" : "ml-auto"}`} data-testid="nav-cta-explore">
           Explore the project <ArrowRight size={14} />
         </Link>
         <button
@@ -75,6 +85,11 @@ const MobileMenu = () => (
         </Link>
       ))}
     </div>
+    {X_URL && (
+      <div className="mt-6 flex items-center gap-2 text-sm text-white/70">
+        <XLink testId="mobile-x-link" /> <span>@{X_URL.replace(/\/+$/, "").split("/").pop()}</span>
+      </div>
+    )}
     <Link to={{ pathname: "/", hash: "#modules" }} className="btn-primary mt-6 w-full" data-testid="mobile-cta-explore">
       Explore the project <ArrowRight size={14} />
     </Link>

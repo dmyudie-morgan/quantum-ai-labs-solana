@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, BellRing } from "lucide-react";
-import { useLocalStorage } from "@/hooks/usePrefs";
+import { toast } from "sonner";
+import { useGasNotifications } from "@/hooks/useGasNotifications";
 
-export const GasAlert = ({ gas, network }) => {
-  const [cfg, setCfg] = useLocalStorage("qal-gas-alert", { enabled: true, threshold: 20, direction: "above" });
+const PERM_NOTE = {
+  granted: "Browser notifications allowed.",
+  denied: "Notifications are blocked for this site — allow them in your browser's site settings to use this.",
+  default: "You'll be asked for permission when you enable this.",
+  unsupported: "This browser does not support the Notification API.",
+};
+
+export const GasAlert = ({ gas, network, cfg, setCfg }) => {
   const [draft, setDraft] = useState(String(cfg.threshold));
   useEffect(() => setDraft(String(cfg.threshold)), [cfg.threshold]);
 
@@ -12,6 +19,8 @@ export const GasAlert = ({ gas, network }) => {
     if (Number.isFinite(t) && t >= 0) setCfg({ ...cfg, threshold: t });
   };
   const active = cfg.enabled && gas != null && (cfg.direction === "above" ? gas > cfg.threshold : gas < cfg.threshold);
+  const message = active ? `${network} gas is ${gas.toLocaleString(undefined, { maximumFractionDigits: 4 })} gwei — ${cfg.direction} your ${cfg.threshold} gwei threshold.` : "";
+  const { perm, toggle, test } = useGasNotifications({ active, message, cfg, setCfg });
 
   return (
     <div className="mt-6 border-t border-white/[0.06] pt-5" data-testid="gas-alert">
@@ -36,11 +45,21 @@ export const GasAlert = ({ gas, network }) => {
       {active && (
         <div role="alert" className="mt-4 flex items-center gap-2 rounded-[3px] border border-amber-300/40 bg-amber-300/[0.08] px-3 py-2.5 text-sm text-amber-100" data-testid="gas-alert-banner">
           <AlertTriangle size={15} className="shrink-0" />
-          {network} gas is {gas.toLocaleString(undefined, { maximumFractionDigits: 4 })} gwei — {cfg.direction} your {cfg.threshold} gwei threshold.
+          {message}
         </div>
       )}
+      <div className="mt-4 flex flex-wrap items-center gap-3" data-testid="gas-notify-controls">
+        <label className="flex items-center gap-2 text-xs text-white/70">
+          <input type="checkbox" className="accent-[#8fd9f7]" checked={Boolean(cfg.notify)} disabled={!cfg.enabled || perm === "unsupported" || perm === "denied"} onChange={(e) => toggle(e.target.checked)} data-testid="gas-notify-toggle" />
+          Browser notification when the alert triggers while this tab is in the background
+        </label>
+        {cfg.notify && perm === "granted" && (
+          <button type="button" className="btn-ghost btn-sm" onClick={() => (test() ? toast.success("Test notification sent") : toast.error("This browser blocked the notification"))} data-testid="gas-notify-test-btn">Send test notification</button>
+        )}
+        <span className="text-[11px] text-white/40" data-testid="gas-notify-permission">{PERM_NOTE[perm] || PERM_NOTE.default}</span>
+      </div>
       <p className="mt-3 text-[11px] text-white/35" data-testid="gas-alert-note">
-        Compares the latest eth_gasPrice reading with your threshold. Preferences are stored in this browser. Alerts only update while this page is open — there are no background notifications.
+        Compares the latest eth_gasPrice reading with your threshold. Preferences are stored in this browser. With notifications on, the monitor keeps refreshing every 30 s even when the tab is hidden; browsers may throttle hidden tabs to about once a minute. Nothing runs once the tab or browser is closed — there is no server-side alerting.
       </p>
     </div>
   );

@@ -8,7 +8,8 @@ export function mulberry32(seed) {
   };
 }
 
-export const LIMITS = { nodes: [4, 18], density: [0.1, 1], sweeps: [10, 3000], slices: [2, 16] };
+export const LIMITS = { nodes: [4, 200], density: [0.02, 1], sweeps: [10, 3000], slices: [2, 16] };
+export const EXACT_MAX = 20;
 export const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : lo));
 
 export function generateGraph({ n, density, seed, weighted }) {
@@ -17,18 +18,32 @@ export function generateGraph({ n, density, seed, weighted }) {
   for (let i = 0; i < n; i++)
     for (let j = i + 1; j < n; j++) if (rng() < density) edges.push({ u: i, v: j, w: weighted ? 1 + Math.floor(rng() * 9) : 1 });
   if (!edges.length) edges.push({ u: 0, v: 1, w: 1 });
-  const adj = Array.from({ length: n }, () => []);
+  const off = new Int32Array(n + 1);
+  edges.forEach(({ u, v }) => { off[u + 1]++; off[v + 1]++; });
+  for (let i = 0; i < n; i++) off[i + 1] += off[i];
+  const fill = off.slice(0, n);
+  const nb = new Int32Array(edges.length * 2);
+  const wt = new Float64Array(edges.length * 2);
   edges.forEach(({ u, v, w }) => {
-    adj[u].push([v, w]);
-    adj[v].push([u, w]);
+    nb[fill[u]] = v; wt[fill[u]++] = w;
+    nb[fill[v]] = u; wt[fill[v]++] = w;
   });
-  return { n, edges, adj, totalWeight: edges.reduce((s, e) => s + e.w, 0) };
+  return { n, edges, off, nb, wt, totalWeight: edges.reduce((s, e) => s + e.w, 0) };
 }
 
-export const cutValue = (s, edges) => edges.reduce((c, e) => (s[e.u] !== s[e.v] ? c + e.w : c), 0);
+export function cutValue(s, edges) {
+  let c = 0;
+  for (let k = 0; k < edges.length; k++) if (s[edges[k].u] !== s[edges[k].v]) c += edges[k].w;
+  return c;
+}
 
-const field = (adj, s, i) => adj[i].reduce((h, [j, w]) => h + w * s[j], 0);
-const randomSpins = (n, rng) => Array.from({ length: n }, () => (rng() < 0.5 ? 1 : -1));
+function field(g, s, i) {
+  let h = 0;
+  for (let k = g.off[i]; k < g.off[i + 1]; k++) h += g.wt[k] * s[g.nb[k]];
+  return h;
+}
+const randomSpins = (n, rng) => Int8Array.from({ length: n }, () => (rng() < 0.5 ? 1 : -1));
+const progressStep = (sweeps) => Math.max(1, Math.floor(sweeps / 25));
 
 function timed(fn) {
   const t0 = performance.now();
@@ -37,7 +52,7 @@ function timed(fn) {
 }
 
 export const exact = (g) =>
-  timed(() => {
+  g.n > EXACT_MAX ? null : timed(() => {
     const { n, edges } = g;
     const total = 1 << (n - 1);
     let best = -1;
@@ -50,7 +65,7 @@ export const exact = (g) =>
       }
       if (c > best) { best = c; bestMask = m; }
     }
-    const spins = Array.from({ length: n }, (_, i) => ((bestMask >> i) & 1 ? 1 : -1));
+    const spins = Int8Array.from({ length: n }, (_, i) => ((bestMask >> i) & 1 ? 1 : -1));
     return { spins, cut: best, evaluations: total };
   });
 
@@ -65,7 +80,7 @@ export const localSearch = (g, seed, restarts = 20) =>
         let bi = -1;
         let bg = 0;
         for (let i = 0; i < g.n; i++) {
-          const gain = s[i] * field(g.adj, s, i);
+          const gain = s[i] * field(g, s, i);
           evals++;
           if (gain > bg) { bg = gain; bi = i; }
         }
@@ -73,25 +88,27 @@ export const localSearch = (g, seed, restarts = 20) =>
         s[bi] = -s[bi];
       }
       const c = cutValue(s, g.edges);
-      if (c > best.cut) best = { cut: c, spins: [...s] };
+      if (c > best.cut) best = { cut: c, spins: s.slice() };
     }
     return { ...best, evaluations: evals };
   });
 
-export const simulatedAnnealing = (g, seed, { sweeps, tStart, tEnd }) =>
+export const simulatedAnnealing = (g, seed, { sweeps, tStart, tEnd, onProgress }) =>
   timed(() => {
     const rng = mulberry32(seed ^ 0xa11e);
     const s = randomSpins(g.n, rng);
     let cut = cutValue(s, g.edges);
-    let best = { cut, spins: [...s] };
+    let best = { cut, spins: s.slice() };
+    const step = progressStep(sweeps);
     for (let k = 0; k < sweeps; k++) {
+      if (onProgress && k % step === 0) onProgress(k / sweeps);
       const T = tStart * Math.pow(tEnd / tStart, k / Math.max(1, sweeps - 1));
       for (let i = 0; i < g.n; i++) {
-        const gain = s[i] * field(g.adj, s, i);
+        const gain = s[i] * field(g, s, i);
         if (gain >= 0 || rng() < Math.exp(gain / T)) {
           s[i] = -s[i];
           cut += gain;
-          if (cut > best.cut) best = { cut, spins: [...s] };
+          if (cut > best.cut) best = { cut, spins: s.slice() };
         }
       }
     }
@@ -99,13 +116,15 @@ export const simulatedAnnealing = (g, seed, { sweeps, tStart, tEnd }) =>
   });
 
 // Path-integral Monte Carlo (Martoňák, Santoro & Tosatti style) — a classical simulation.
-export const simulatedQuantumAnnealing = (g, seed, { sweeps, slices: P, temperature: T, gammaStart, gammaEnd }) =>
+export const simulatedQuantumAnnealing = (g, seed, { sweeps, slices: P, temperature: T, gammaStart, gammaEnd, onProgress }) =>
   timed(() => {
     const rng = mulberry32(seed ^ 0x9a17);
     const reps = Array.from({ length: P }, () => randomSpins(g.n, rng));
     const PT = P * T;
     let best = { cut: -1, spins: [] };
+    const step = progressStep(sweeps);
     for (let k = 0; k < sweeps; k++) {
+      if (onProgress && k % step === 0) onProgress(k / sweeps);
       const gamma = gammaStart + (gammaEnd - gammaStart) * (k / Math.max(1, sweeps - 1));
       const jPerp = -(PT / 2) * Math.log(Math.tanh(gamma / PT));
       for (let p = 0; p < P; p++) {
@@ -113,13 +132,13 @@ export const simulatedQuantumAnnealing = (g, seed, { sweeps, slices: P, temperat
         const up = reps[(p + 1) % P];
         const dn = reps[(p - 1 + P) % P];
         for (let i = 0; i < g.n; i++) {
-          const d = -2 * s[i] * field(g.adj, s, i) + 2 * jPerp * s[i] * (up[i] + dn[i]);
+          const d = -2 * s[i] * field(g, s, i) + 2 * jPerp * s[i] * (up[i] + dn[i]);
           if (d <= 0 || rng() < Math.exp(-d / PT)) s[i] = -s[i];
         }
       }
       for (const s of reps) {
         const c = cutValue(s, g.edges);
-        if (c > best.cut) best = { cut: c, spins: [...s] };
+        if (c > best.cut) best = { cut: c, spins: s.slice() };
       }
     }
     return { ...best, evaluations: sweeps * P * g.n };
